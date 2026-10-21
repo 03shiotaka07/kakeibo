@@ -75,6 +75,14 @@ button.small{background:var(--chip);border:1px solid var(--line);color:var(--tx)
 .chart .bars i{display:block;width:40%;border-radius:3px 3px 0 0;min-height:1px}
 .chart .bi{background:var(--inc)}.chart .be{background:var(--exp)}
 .chart span{font-size:11px;color:var(--sub);margin-top:4px}
+.chart.one{margin-top:22px}
+.chart .bars .one{width:62%;background:var(--pri);opacity:.5;border-radius:3px 3px 0 0;position:relative;min-height:1px}
+.chart .bars .one.cur{opacity:1}
+.chart .bars .one em{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-style:normal;font-size:10px;color:var(--sub);white-space:nowrap}
+.sel2{display:flex;gap:8px;margin-bottom:10px}.sel2 select{flex:1;min-width:0}
+.stat3{display:flex;justify-content:space-between;gap:6px;margin:12px 0 4px;font-size:13px}.stat3 div{flex:1}
+.mrow{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:14px}
+.mrow:first-of-type{border-top:0}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 th,td{padding:6px 4px;text-align:right;white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
@@ -201,6 +209,7 @@ const monthTx=m=>S.tx.filter(t=>t.date.startsWith(m));
 
 /* ---------- 状態 ---------- */
 let view='home',curM=today().slice(0,7),q='',statScope='month',openCat=null,sheet=null,sf=null;
+let trend={cat:'',sub:'',n:6};
 let draft=newDraft('expense');
 function newDraft(kind){return {id:null,kind,amount:'',date:today(),catId:null,subId:null,payId:(S&&S.lastPay)||(S&&S.pays[0]&&S.pays[0].id)||null,memo:''};}
 const getO=n=>n==='draft'?draft:sf;
@@ -342,6 +351,7 @@ function vStats(){
   return monthNav()+
   '<div class="card"><h3>収入と支出の推移（直近6か月）</h3><div class="chart">'+rows.map(r=>'<div class="col"><div class="bars"><i class="bi" style="height:'+(r.a.inc/max*100)+'%"></i><i class="be" style="height:'+(r.a.exp/max*100)+'%"></i></div><span>'+(+r.m.slice(5))+'月</span></div>').join('')+'</div>'+
   '<div class="muted" style="margin-top:8px"><span class="pos">■</span> 収入　<span class="neg">■</span> 支出</div></div>'+
+  trendCard()+
   '<div class="card"><h3>区分の比較</h3><div class="scroll"><table><tr><th></th><th class="t-fixed">固定</th><th class="t-variable">変動</th><th class="t-special">特別</th><th>支出計</th><th>収入</th><th>収支</th></tr>'+
   rows.map(r=>'<tr><td>'+(+r.m.slice(5))+'月</td><td>'+yen(r.a.expBy.fixed)+'</td><td>'+yen(r.a.expBy.variable)+'</td><td>'+yen(r.a.expBy.special)+'</td><td><b>'+yen(r.a.exp)+'</b></td><td>'+yen(r.a.inc)+'</td><td class="'+(r.a.inc-r.a.exp<0?'neg':'pos')+'">'+yen(r.a.inc-r.a.exp)+'</td></tr>').join('')+'</table></div></div>'+
   '<div class="seg"><button class="'+(statScope==='month'?'on':'')+'" data-a="scope" data-v="month">'+mLabel(curM)+'</button><button class="'+(statScope==='year'?'on':'')+'" data-a="scope" data-v="year">'+curM.slice(0,4)+'年</button></div>'+
@@ -349,6 +359,39 @@ function vStats(){
     const subs=Object.keys(x.v.subs).map(k=>({n:k==='_'?'(小分類なし)':((subOf(x.c,k)||{}).name||'(不明)'),v:x.v.subs[k]})).sort((p,q2)=>q2.v-p.v);
     return '<div class="catrow"><div class="row"><span>'+esc(x.c.name)+'</span><span><b>'+yen(x.v.total)+'</b> <span class="muted">'+Math.round(x.v.total/tot*100)+'%</span></span></div><div class="bar"><i style="width:'+(x.v.total/tot*100)+'%"></i></div>'+
     (subs.length>1||(subs[0]&&subs[0].n!=='(小分類なし)')?subs.map(s=>'<div class="subline"><span>'+esc(s.n)+'</span><span>'+yen(s.v)+'</span></div>').join(''):'')+'</div>';}).join(''):'<div class="empty">データなし</div>')+'</div>';
+}
+
+function trendCard(){
+  const T=trend;
+  const ms=monthsBack(curM,T.n);
+  const c=catById(T.cat);
+  const val=m=>{let s=0;for(const t of S.tx){
+    if(!t.date.startsWith(m))continue;
+    if(T.cat===''){if(t.kind==='expense')s+=t.amount;}
+    else if(T.cat==='__inc'){if(t.kind==='income')s+=t.amount;}
+    else if(t.catId===T.cat&&(!T.sub||t.subId===T.sub))s+=t.amount;
+  }return s;};
+  const vals=ms.map(val);
+  const max=Math.max(1,...vals);const sum=vals.reduce((a,b)=>a+b,0);
+  const man=v=>v>=10000?(v/10000).toFixed(v>=100000?0:1).replace(/\.0$/,'')+'万':String(Math.round(v));
+  const isInc=T.cat==='__inc'||(c&&c.kind==='income');
+  const opt=(v,l,cur)=>'<option value="'+v+'"'+(cur===v?' selected':'')+'>'+esc(l)+'</option>';
+  const ex=S.cats.filter(x=>x.kind==='expense'),inc=S.cats.filter(x=>x.kind==='income');
+  const mi=vals.indexOf(max);
+  let label=T.cat===''?'支出すべて':(T.cat==='__inc'?'収入すべて':(c?c.name:'')+(T.sub&&c?' › '+((subOf(c,T.sub)||{}).name||''):''));
+  return '<div class="card"><h3>項目別の推移（'+esc(label)+'）</h3>'+
+  '<div class="sel2"><select data-t="cat">'+opt('','支出すべて',T.cat)+opt('__inc','収入すべて',T.cat)+
+    '<optgroup label="支出カテゴリ">'+ex.map(x=>opt(x.id,x.name+(x.hidden?'（非表示）':''),T.cat)).join('')+'</optgroup>'+
+    '<optgroup label="収入カテゴリ">'+inc.map(x=>opt(x.id,x.name+(x.hidden?'（非表示）':''),T.cat)).join('')+'</optgroup></select>'+
+  (c&&c.subs.length?'<select data-t="sub">'+opt('','すべての小分類',T.sub)+c.subs.map(x=>opt(x.id,x.name,T.sub)).join('')+'</select>':'')+'</div>'+
+  '<div class="seg" style="margin-bottom:0"><button class="'+(T.n===6?'on':'')+'" data-a="trendN" data-v="6">6か月</button><button class="'+(T.n===12?'on':'')+'" data-a="trendN" data-v="12">12か月</button></div>'+
+  '<div class="chart one">'+ms.map((m,i)=>'<div class="col"><div class="bars"><div class="one'+(m===curM?' cur':'')+'" style="height:'+(vals[i]/max*100)+'%">'+(T.n<=6&&vals[i]>0?'<em>'+man(vals[i])+'</em>':'')+'</div></div><span>'+(+m.slice(5))+'月</span></div>').join('')+'</div>'+
+  '<div class="stat3"><div><span class="muted">平均</span><br><b>'+yen(sum/ms.length)+'</b></div><div><span class="muted">最大</span><br><b>'+yen(max)+'</b> <span class="muted">'+(vals[mi]>0?(+ms[mi].slice(5))+'月':'')+'</span></div><div style="text-align:right"><span class="muted">合計</span><br><b>'+yen(sum)+'</b></div></div>'+
+  '<div style="margin-top:8px">'+ms.map((m,i)=>{
+    const d=i>0?vals[i]-vals[i-1]:null;
+    const good=d==null?'':((d>0)===isInc?'pos':'neg');
+    return '<div class="mrow"><span>'+mLabel(m)+'</span><span><b>'+yen(vals[i])+'</b> <span class="muted '+good+'" style="display:inline-block;min-width:78px;text-align:right">'+(d==null||d===0?'':(d>0?'▲ ':'▼ ')+yen(Math.abs(d)))+'</span></span></div>';
+  }).reverse().join('')+'</div></div>';
 }
 
 /* ---------- 設定 ---------- */
@@ -427,6 +470,7 @@ document.addEventListener('click',e=>{
     case 'mprev':curM=shiftM(curM,-1);render();break;
     case 'mnext':curM=shiftM(curM,1);render();break;
     case 'scope':statScope=v;render();break;
+    case 'trendN':trend.n=Number(v);render();break;
     case 'kind':draft.kind=v;draft.catId=null;draft.subId=null;render();break;
     case 'pickCat':draft.catId=id;draft.subId=null;render();break;
     case 'pickSub':draft.subId=id||null;render();break;
@@ -465,7 +509,9 @@ document.addEventListener('input',e=>{
   }
 });
 document.addEventListener('change',e=>{
-  const t=e.target;const s=t.dataset.s;if(!s)return;
+  const t=e.target;
+  if(t.dataset.t){if(t.dataset.t==='cat'){trend.cat=t.value;trend.sub='';}else trend.sub=t.value;render();return;}
+  const s=t.dataset.s;if(!s)return;
   const id=t.dataset.id,sid=t.dataset.sid;
   if(s==='catName'){const c=catById(id);c.name=t.value.trim()||c.name;}
   else if(s==='catType'){catById(id).type=t.value;}
